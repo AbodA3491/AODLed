@@ -4,16 +4,19 @@ import android.app.NotificationManager
 import android.content.ComponentName
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import com.binaryunit.aodled.config.AppRules
 import com.binaryunit.aodled.notify.NotifInfo
 import com.binaryunit.aodled.notify.qualifies
 
-/** Feeds qualifying notifications (Owner + Private Space + forwarded) into [AppState.tracker]. */
+/** Feeds only user-enabled apps' qualifying notifications into the shared tracker. */
 class LightListenerService : NotificationListenerService() {
     private lateinit var colours: ColourResolver
+    private lateinit var appRules: AppRules
 
     override fun onCreate() {
         super.onCreate()
         colours = ColourResolver(this)
+        appRules = AppRules(this)
     }
 
     override fun onListenerConnected() {
@@ -29,7 +32,6 @@ class LightListenerService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification, rankingMap: RankingMap) {
         val info = toInfo(sbn, rankingMap)
-        // Most traffic (progress bars, media, silent reposts) leaves the light as it is: don't wake the overlay
         val changed = if (info != null) AppState.tracker.posted(info) else AppState.tracker.removed(sbn.key)
         if (changed) AppState.changed()
     }
@@ -43,7 +45,6 @@ class LightListenerService : NotificationListenerService() {
     }
 
     private fun rebuild(rankingMap: RankingMap?): Boolean {
-        // Throws if called while unbound; the next connect rebuilds anyway
         val active = try { activeNotifications } catch (e: SecurityException) { null } ?: return false
         return AppState.tracker.reset(active.mapNotNull { toInfo(it, rankingMap) })
     }
@@ -55,6 +56,7 @@ class LightListenerService : NotificationListenerService() {
         val importance = if (ranked) ranking.importance else NotificationManager.IMPORTANCE_DEFAULT
         val intercepted = ranked && (ranking.isSuspended || !ranking.matchesInterruptionFilter())
         if (!qualifies(n.flags, importance, intercepted, sbn.packageName, n.channelId ?: "", packageName)) return null
-        return NotifInfo(sbn.key, sbn.postTime, n.`when`, colours.colourFor(sbn))
+        if (!appRules.enabled(sbn.packageName)) return null
+        return NotifInfo(sbn.key, sbn.postTime, n.`when`, colours.colourFor(sbn), sbn.packageName)
     }
 }
