@@ -26,7 +26,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.binaryunit.aodled"
+        applicationId = "com.aboda.aodled.custom"
         minSdk = 31
         targetSdk = 35
         versionCode = 1
