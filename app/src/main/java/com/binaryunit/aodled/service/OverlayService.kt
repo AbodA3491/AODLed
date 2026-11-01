@@ -17,6 +17,8 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import com.binaryunit.aodled.colour.displayColour
 import com.binaryunit.aodled.config.Animation
+import com.binaryunit.aodled.config.AppRules
+import com.binaryunit.aodled.config.ColourMode
 import com.binaryunit.aodled.config.LightConfig
 import com.binaryunit.aodled.config.Offset
 import com.binaryunit.aodled.config.Prefs
@@ -42,6 +44,7 @@ class OverlayService : AccessibilityService() {
     private lateinit var dm: DisplayManager
     private lateinit var pm: PowerManager
     private lateinit var prefs: Prefs
+    private lateinit var appRules: AppRules
     private lateinit var wake: DozeWake
     private lateinit var controller: OverlayController
     private var view: LightView? = null
@@ -111,6 +114,7 @@ class OverlayService : AccessibilityService() {
         dm = getSystemService(DisplayManager::class.java)
         pm = getSystemService(PowerManager::class.java)
         prefs = Prefs(this)
+        appRules = AppRules(this)
         wake = DozeWake(this)
         controller = OverlayController(host, scheduler)
         cfg = prefs.load()
@@ -170,9 +174,12 @@ class OverlayService : AccessibilityService() {
         val v = view ?: return Light.OFF
         val (width, _, cutout) = screenGeometry()
         val path = cutoutPath()
-        val colour = AppState.tracker.current(cfg.lightOff)?.let { displayColour(it.colour, cfg) }
+        val active = AppState.tracker.current(cfg.lightOff)
+        val rule = active?.let { appRules.get(it.packageName) }
+        val appCfg = if (rule != null) cfg.copy(style = rule.style, animation = rule.animation, colourMode = ColourMode.FIXED, fixedColour = rule.colour) else cfg
+        val colour = active?.let { displayColour(it.colour, appCfg) }
         val state = LightState(
-            cfg = cfg,
+            cfg = appCfg,
             ring = cfg.ring ?: defaultRing(cutout, width),
             dot = cfg.dot ?: defaultDot(cutout, width),
             colour = colour,
@@ -186,7 +193,7 @@ class OverlayService : AccessibilityService() {
         v.state = state
         return when {
             colour == null -> Light.OFF
-            effectiveAnimation(cfg.style, cfg.animation) != Animation.OFF -> Light.ANIMATED
+            effectiveAnimation(appCfg.style, appCfg.animation) != Animation.OFF -> Light.ANIMATED
             else -> Light.STILL
         }
     }
