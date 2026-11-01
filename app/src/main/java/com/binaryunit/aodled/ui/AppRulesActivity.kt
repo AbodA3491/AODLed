@@ -6,6 +6,8 @@ import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.LinearLayout
@@ -38,7 +40,7 @@ class AppRulesActivity : AppCompatActivity() {
             setNavigationOnClickListener { finish() }
         })
         root.addView(TextView(this).apply {
-            text = "Enable an app to let its notifications trigger the LED. Set its own colour, shape and animation."
+            text = "Choose which apps can trigger the notification light. Each enabled app has its own colour, shape and animation."
             setPadding(20, 16, 20, 16)
         })
         val scroll = ScrollView(this)
@@ -47,16 +49,14 @@ class AppRulesActivity : AppCompatActivity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
 
-        val apps = queryLauncherApps().sortedBy { it.loadLabel(packageManager).toString().lowercase() }
-        for (app in apps) {
+        queryLauncherApps().sortedBy { it.loadLabel(packageManager).toString().lowercase() }.forEach { app ->
             val pkg = app.packageName
-            val current = rules.get(pkg)
+            val initial = rules.get(pkg)
             val card = MaterialCardView(this).apply {
                 radius = 18f
                 cardElevation = 0f
                 setCardBackgroundColor(0xFF202124.toInt())
-                val p = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = 10 }
-                list.addView(this, p)
+                list.addView(this, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = 10 })
             }
             val column = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -66,50 +66,45 @@ class AppRulesActivity : AppCompatActivity() {
             val check = CheckBox(this).apply {
                 text = app.loadLabel(packageManager).toString()
                 textSize = 16f
-                isChecked = current.enabled
-                setOnCheckedChangeListener { _, checked ->
-                    rules.set(pkg, currentFor(pkg, checked, style, animation, colour))
-                    style.isEnabled = checked; animation.isEnabled = checked; colour.isEnabled = checked
-                }
+                isChecked = initial.enabled
             }
             column.addView(check)
-            val row = LinearLayout(this).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                orientation = LinearLayout.HORIZONTAL
-            }
+            val row = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
             column.addView(row)
-            val style = spinner(row, Style.entries.map { it.name.lowercase().replaceFirstChar(Char::uppercase) }, Style.entries.indexOf(current.style))
-            val animation = spinner(row, Animation.entries.map { it.name.lowercase().replaceFirstChar(Char::uppercase) }, Animation.entries.indexOf(current.animation))
-            val colour = spinner(row, colours.map { it.first }, colours.indexOfFirst { it.second == current.colour }.coerceAtLeast(0))
-            style.isEnabled = current.enabled; animation.isEnabled = current.enabled; colour.isEnabled = current.enabled
-            style.onItemSelected { rules.set(pkg, currentFor(pkg, check.isChecked, Style.entries[it], Animation.entries[animation.selectedItemPosition], colours[colour.selectedItemPosition].second)) }
-            animation.onItemSelected { rules.set(pkg, currentFor(pkg, check.isChecked, Style.entries[style.selectedItemPosition], Animation.entries[it], colours[colour.selectedItemPosition].second)) }
-            colour.onItemSelected { rules.set(pkg, currentFor(pkg, check.isChecked, Style.entries[style.selectedItemPosition], Animation.entries[animation.selectedItemPosition], colours[it].second)) }
+            val style = spinner(row, Style.entries.map { it.name.lowercase().replaceFirstChar(Char::uppercase) }, Style.entries.indexOf(initial.style))
+            val animation = spinner(row, Animation.entries.map { it.name.lowercase().replaceFirstChar(Char::uppercase) }, Animation.entries.indexOf(initial.animation))
+            val colour = spinner(row, colours.map { it.first }, colours.indexOfFirst { it.second == initial.colour }.coerceAtLeast(0))
+            fun save() {
+                rules.set(pkg, AppRule(check.isChecked, Style.entries[style.selectedItemPosition],
+                    Animation.entries[animation.selectedItemPosition], colours[colour.selectedItemPosition].second))
+            }
+            fun syncEnabled() {
+                style.isEnabled = check.isChecked
+                animation.isEnabled = check.isChecked
+                colour.isEnabled = check.isChecked
+            }
+            check.setOnCheckedChangeListener { _, _ -> save(); syncEnabled() }
+            style.onItemSelected { save() }
+            animation.onItemSelected { save() }
+            colour.onItemSelected { save() }
+            syncEnabled()
         }
     }
-
-    private fun currentFor(pkg: String, enabled: Boolean, style: Spinner, animation: Spinner, colour: Spinner) =
-        currentFor(pkg, enabled, Style.entries[style.selectedItemPosition], Animation.entries[animation.selectedItemPosition], colours[colour.selectedItemPosition].second)
-
-    private fun currentFor(pkg: String, enabled: Boolean, style: Style, animation: Animation, colour: Int) =
-        AppRule(enabled, style, animation, colour)
 
     private fun spinner(parent: LinearLayout, items: List<String>, selected: Int): Spinner {
         val s = Spinner(this)
         s.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, items)
+        parent.addView(s, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         s.setSelection(selected.coerceAtLeast(0))
-        parent.addView(s, LinearLayout.LayoutParams(0, -wrapContent(), 1f))
         return s
     }
 
-    private fun Spinner.onItemSelected(action: (Int) -> Unit) {
-        onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
-            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) = action(position)
+    private fun Spinner.onItemSelected(action: () -> Unit) {
+        onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) = action()
         }
     }
-
-    private fun wrapContent() = android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 
     private fun queryLauncherApps(): List<ApplicationInfo> {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
