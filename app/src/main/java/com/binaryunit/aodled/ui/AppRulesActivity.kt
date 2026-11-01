@@ -19,9 +19,9 @@ import com.binaryunit.aodled.config.Animation
 import com.binaryunit.aodled.config.AppRule
 import com.binaryunit.aodled.config.AppRules
 import com.binaryunit.aodled.config.Style
+import com.binaryunit.aodled.service.AppState
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.card.MaterialCardView
-import com.binaryunit.aodled.service.AppState
 
 class AppRulesActivity : AppCompatActivity() {
     private lateinit var rules: AppRules
@@ -50,7 +50,7 @@ class AppRulesActivity : AppCompatActivity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
 
-        queryLauncherApps().sortedBy { it.loadLabel(packageManager).toString().lowercase() }.forEach { app ->
+        queryLauncherApps().sortedBy { safeLabel(it).lowercase() }.forEach { app ->
             val pkg = app.packageName
             val initial = rules.get(pkg)
             val card = MaterialCardView(this).apply {
@@ -65,7 +65,7 @@ class AppRulesActivity : AppCompatActivity() {
             }
             card.addView(column)
             val check = CheckBox(this).apply {
-                text = app.loadLabel(packageManager).toString()
+                text = safeLabel(app)
                 textSize = 16f
                 isChecked = initial.enabled
             }
@@ -75,10 +75,15 @@ class AppRulesActivity : AppCompatActivity() {
             val style = spinner(row, Style.entries.map { it.name.lowercase().replaceFirstChar(Char::uppercase) }, Style.entries.indexOf(initial.style))
             val animation = spinner(row, Animation.entries.map { it.name.lowercase().replaceFirstChar(Char::uppercase) }, Animation.entries.indexOf(initial.animation))
             val colour = spinner(row, colours.map { it.first }, colours.indexOfFirst { it.second == initial.colour }.coerceAtLeast(0))
+
             fun save() {
-                rules.set(pkg, AppRule(check.isChecked, Style.entries[style.selectedItemPosition],
-                    Animation.entries[animation.selectedItemPosition], colours[colour.selectedItemPosition].second))
-                AppState.rebuild?.invoke()
+                val styleIndex = style.selectedItemPosition.coerceIn(0, Style.entries.lastIndex)
+                val animationIndex = animation.selectedItemPosition.coerceIn(0, Animation.entries.lastIndex)
+                val colourIndex = colour.selectedItemPosition.coerceIn(0, colours.lastIndex)
+                rules.set(pkg, AppRule(check.isChecked, Style.entries[styleIndex],
+                    Animation.entries[animationIndex], colours[colourIndex].second))
+                // The listener reads the saved rules when the next notification arrives.
+                // Do not force a service rebuild while this screen is being constructed.
                 AppState.changed()
             }
             fun syncEnabled() {
@@ -94,29 +99,40 @@ class AppRulesActivity : AppCompatActivity() {
         }
     }
 
+    private fun safeLabel(app: ApplicationInfo): String = try {
+        app.loadLabel(packageManager).toString().ifBlank { app.packageName }
+    } catch (_: Exception) {
+        app.packageName
+    }
+
     private fun spinner(parent: LinearLayout, items: List<String>, selected: Int): Spinner {
         val s = Spinner(this)
         s.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, items)
         parent.addView(s, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        s.setSelection(selected.coerceAtLeast(0))
+        s.setSelection(selected.coerceIn(0, items.lastIndex))
         return s
     }
 
     private fun Spinner.onItemSelected(action: () -> Unit) {
+        var skipInitialSelection = true
         onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onNothingSelected(parent: AdapterView<*>?) {}
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) = action()
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (skipInitialSelection) {
+                    skipInitialSelection = false
+                    return
+                }
+                action()
+            }
         }
     }
 
     private fun queryLauncherApps(): List<ApplicationInfo> {
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val infos = if (android.os.Build.VERSION.SDK_INT >= 33) {
-            packageManager.getInstalledApplications(android.content.pm.PackageManager.ApplicationInfoFlags.of(0))
-        } else {
-            @Suppress("DEPRECATION") packageManager.getInstalledApplications(0)
-        }
-        val launchable = packageManager.queryIntentActivities(intent, 0).map { it.activityInfo.packageName }.toSet()
-        return infos.filter { it.packageName != packageName && it.packageName in launchable }
+        val launchable = packageManager.queryIntentActivities(intent, 0)
+            .mapNotNull { it.activityInfo?.applicationInfo }
+            .filter { it.packageName != packageName }
+            .distinctBy { it.packageName }
+        return launchable
     }
 }
