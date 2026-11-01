@@ -1,0 +1,57 @@
+name: Android debug APK
+
+on:
+  push:
+    branches:
+      - aboda/per-app-led-rules
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK tools
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platforms;android-35" "build-tools;36.0.0"
+
+      - name: Run unit tests
+        run: ./gradlew --no-daemon testDebugUnitTest
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Package debug APK
+        run: |
+          mkdir -p release
+          cp app/build/outputs/apk/debug/*.apk release/AODLed-debug.apk
+          cd release
+          zip -j debug.zip AODLed-debug.apk
+
+      - name: Upload debug ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug
+          path: release/debug.zip
+          if-no-files-found: error
+          retention-days: 14

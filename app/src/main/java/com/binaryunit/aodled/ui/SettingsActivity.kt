@@ -110,6 +110,7 @@ class SettingsActivity : AppCompatActivity() {
         bindToggle(R.id.light_off_group, lightOffs) { cfg.copy(lightOff = it) }
         buildPalette()
 
+        findViewById<View>(R.id.app_rules).setOnClickListener { startActivity(Intent(this, AppRulesActivity::class.java)) }
         findViewById<View>(R.id.adjust).setOnClickListener { startActivity(Intent(this, EditorActivity::class.java)) }
         findViewById<View>(R.id.test).setOnClickListener {
             // Android 12 has no notification permission: notifications are allowed by default

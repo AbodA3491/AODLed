@@ -31,6 +31,10 @@
         </activity>
 
         <activity
+            android:name=".ui.AppRulesActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ui.EditorActivity"
             android:exported="false"
             android:screenOrientation="portrait"
