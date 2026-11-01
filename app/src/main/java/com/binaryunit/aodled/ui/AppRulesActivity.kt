@@ -21,6 +21,7 @@ import com.binaryunit.aodled.config.AppRules
 import com.binaryunit.aodled.config.Style
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.card.MaterialCardView
+import com.binaryunit.aodled.service.AppState
 
 class AppRulesActivity : AppCompatActivity() {
     private lateinit var rules: AppRules
@@ -77,6 +78,8 @@ class AppRulesActivity : AppCompatActivity() {
             fun save() {
                 rules.set(pkg, AppRule(check.isChecked, Style.entries[style.selectedItemPosition],
                     Animation.entries[animation.selectedItemPosition], colours[colour.selectedItemPosition].second))
+                AppState.rebuild?.invoke()
+                AppState.changed()
             }
             fun syncEnabled() {
                 style.isEnabled = check.isChecked
